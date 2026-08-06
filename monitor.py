@@ -17,6 +17,7 @@ from datetime import datetime, timezone
 from typing import Any
 
 import nodriver as uc
+from nodriver.core.util import free_port
 from curl_cffi import requests as curl_requests
 
 API_URL = "https://www.tesla.com/inventory/api/v4/inventory-results"
@@ -47,7 +48,7 @@ async def acquire_cookies() -> dict[str, str]:
     os.environ["no_proxy"] = "localhost,127.0.0.1"
 
     profile = tempfile.TemporaryDirectory(prefix="tesla-chrome-")
-    port = uc.core.util.free_port()
+    port = free_port()
     chrome_process = await asyncio.create_subprocess_exec(
         "/usr/bin/google-chrome",
         "--no-first-run",
@@ -130,6 +131,7 @@ async def acquire_cookies() -> dict[str, str]:
                 chrome_process.kill()
                 await chrome_process.wait()
         profile.cleanup()
+
 
 def build_query(model: str, offset: int) -> dict[str, Any]:
     return {
