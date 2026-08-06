@@ -34,7 +34,7 @@ jobs:
 
       - name: Consultar Tesla y actualizar Telegram
         env:
-          MONITOR_API_KEY: \${{ secrets.MONITOR_API_KEY }}
+          MONITOR_API_KEY: ${{ secrets.MONITOR_API_KEY }}
           MONITOR_RELAY_URL: https://tesla-stock-es.clementmoreno.workers.dev/report
           PYTHONUNBUFFERED: "1"
         run: xvfb-run -a python monitor.py
