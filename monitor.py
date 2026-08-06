@@ -42,7 +42,7 @@ async def acquire_cookies() -> dict[str, str]:
     log("Abriendo Chrome para obtener las cookies de Tesla…")
     browser = await uc.start(
         headless=False,
-        no_sandbox=True,
+        sandbox=False,
         lang="es-ES",
         browser_args=[
             "--no-first-run",
