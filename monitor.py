@@ -203,6 +203,27 @@ def fetch_model(
     return results
 
 
+async def fetch_model_with_fresh_cookies(model: str) -> list[dict[str, Any]]:
+    """Usa una cookie Akamai nueva por modelo y reintenta bloqueos temporales."""
+    for attempt in range(2):
+        cookies = await acquire_cookies()
+        session = curl_requests.Session(impersonate="chrome")
+        session.cookies.update(cookies)
+        try:
+            return fetch_model(model, session)
+        except RuntimeError as exc:
+            blocked = "HTTP 403" in str(exc) or "HTTP 412" in str(exc)
+            if attempt == 0 and blocked:
+                log(f"{MODELS[model]} bloqueado temporalmente; reintentando…")
+                await asyncio.sleep(3)
+                continue
+            raise
+        finally:
+            session.close()
+
+    raise RuntimeError(f"No se pudo consultar {MODELS[model]}")
+
+
 def first_value(vehicle: dict[str, Any], *names: str, default: Any = "") -> Any:
     for name in names:
         value = vehicle.get(name)
@@ -281,14 +302,11 @@ def send_report(cars: list[dict[str, Any]]) -> None:
 
 
 async def main() -> None:
-    cookies = await acquire_cookies()
-    session = curl_requests.Session(impersonate="chrome")
-    session.cookies.update(cookies)
     cars: list[dict[str, Any]] = []
     seen: set[str] = set()
 
     for model in MODELS:
-        raw_results = fetch_model(model, session)
+        raw_results = await fetch_model_with_fresh_cookies(model)
         for raw_vehicle in raw_results:
             try:
                 car = normalize_vehicle(model, raw_vehicle)
