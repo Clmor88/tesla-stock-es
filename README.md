@@ -1,8 +1,13 @@
 # Tesla Stock España
 
-Monitor automático de vehículos Tesla **nuevos y de demostración** disponibles
-para entrega inmediata en cualquier punto de España. Revisa Model 3, Model Y,
-Model S y Model X y avisa por Telegram cuando aparece una unidad nueva.
+Monitor automático del inventario Tesla en España:
+
+- Vehículos **nuevos y de demostración** disponibles para entrega inmediata.
+- Vehículos **de ocasión** vendidos por Tesla.
+
+Revisa Model 3, Model Y, Model S y Model X en cualquier punto de España. Envía
+los avisos al mismo chat de Telegram cuando aparece una unidad nueva y, en el
+caso de los vehículos de ocasión, también cuando deja de estar disponible.
 
 [![Comprobar stock Tesla España](https://github.com/Clmor88/tesla-stock-es/actions/workflows/monitor.yml/badge.svg)](https://github.com/Clmor88/tesla-stock-es/actions/workflows/monitor.yml)
 
@@ -12,16 +17,21 @@ Model S y Model X y avisa por Telegram cuando aparece una unidad nueva.
 2. Un Chrome real obtiene las cookies que Tesla exige contra tráfico automatizado.
 3. Ese mismo Chrome consulta la API oficial de inventario para España.
 4. El Worker de Cloudflare compara los identificadores con la comprobación anterior.
-5. Telegram recibe un mensaje únicamente cuando aparece un vehículo nuevo.
+5. Telegram recibe los avisos en el chat configurado.
 
-La primera ejecución crea una línea base y envía un mensaje de activación. Las
-unidades que ya estaban disponibles en ese momento no generan avisos
-individuales.
+La primera ejecución de cada inventario crea una línea base y envía un mensaje
+de activación. Las unidades que ya estaban disponibles en ese momento no
+generan avisos individuales.
+
+En los vehículos de ocasión, una desaparición se confirma en dos comprobaciones
+consecutivas antes de avisar. Esto reduce falsas retiradas si Tesla devuelve
+temporalmente un resultado incompleto. Con la frecuencia actual, el aviso de
+retirada suele llegar aproximadamente entre cinco y diez minutos después.
 
 ## Archivos
 
-- `monitor.py`: consulta y normaliza el inventario de los cuatro modelos.
-- `cloudflare-worker.js`: relé autenticado, estado en KV y avisos por Telegram.
+- `monitor.py`: consulta y normaliza ambos inventarios para los cuatro modelos.
+- `cloudflare-worker.js`: relé autenticado, comparación de altas y bajas, estado en KV y avisos por Telegram.
 - `.github/workflows/monitor.yml`: ejecución automática y manual.
 - `requirements.txt`: dependencias de Python.
 
