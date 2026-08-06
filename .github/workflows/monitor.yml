@@ -1,0 +1,40 @@
+name: Comprobar stock Tesla España
+
+on:
+  schedule:
+    - cron: "*/5 * * * *"
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: tesla-stock-es
+  cancel-in-progress: false
+
+jobs:
+  check-inventory:
+    runs-on: ubuntu-latest
+    timeout-minutes: 8
+    steps:
+      - name: Descargar código
+        uses: actions/checkout@v4
+
+      - name: Preparar Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+          cache: pip
+
+      - name: Instalar dependencias
+        run: |
+          python -m pip install --upgrade pip
+          pip install -r requirements.txt
+          google-chrome --version
+
+      - name: Consultar Tesla y actualizar Telegram
+        env:
+          MONITOR_API_KEY: \${{ secrets.MONITOR_API_KEY }}
+          MONITOR_RELAY_URL: https://tesla-stock-es.clementmoreno.workers.dev/report
+          PYTHONUNBUFFERED: "1"
+        run: xvfb-run -a python monitor.py
