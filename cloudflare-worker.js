@@ -109,9 +109,11 @@ function describeCar(car, removed = false) {
   const demo = car.demo ? "\n🧪 Vehículo de demostración" : "";
   const removedLine = removed ? "\n❌ Ya no aparece en el inventario" : "";
   const fallback = fallbackInventoryUrl(car.condition);
-  const safeUrl = car.url.startsWith("https://www.tesla.com/")
-    ? escapeHtml(car.url)
-    : fallback;
+  const safeUrl = removed
+    ? fallback
+    : car.url.startsWith("https://www.tesla.com/")
+      ? escapeHtml(car.url)
+      : fallback;
   const linkText = removed ? "Consultar inventario de Tesla" : "Ver en Tesla";
 
   return (
