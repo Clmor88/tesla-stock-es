@@ -12,6 +12,7 @@ import os
 import subprocess
 import sys
 import tempfile
+import urllib.parse
 import urllib.request
 from datetime import datetime, timezone
 from typing import Any
@@ -41,8 +42,8 @@ def log(message: str) -> None:
     print(message, file=sys.stderr, flush=True)
 
 
-async def acquire_cookies() -> dict[str, str]:
-    """Arranca Chrome, espera su puerto de depuración y obtiene cookies de Tesla."""
+async def fetch_inventory_in_browser() -> dict[str, list[dict[str, Any]]]:
+    """Arranca Chrome y consulta todo el inventario dentro del navegador."""
     log("Abriendo Chrome para obtener las cookies de Tesla…")
     os.environ["NO_PROXY"] = "localhost,127.0.0.1"
     os.environ["no_proxy"] = "localhost,127.0.0.1"
@@ -116,7 +117,11 @@ async def acquire_cookies() -> dict[str, str]:
         if "_abck" not in cookies:
             raise RuntimeError("Tesla no ha entregado la cookie _abck")
         log(f"Cookies obtenidas correctamente ({len(cookies)} en total).")
-        return cookies
+        inventory: dict[str, list[dict[str, Any]]] = {}
+        for model in MODELS:
+            inventory[model] = await fetch_model_in_page(page, model)
+            await asyncio.sleep(2)
+        return inventory
     finally:
         if browser is not None:
             try:
@@ -157,34 +162,51 @@ def build_query(model: str, offset: int) -> dict[str, Any]:
     }
 
 
-def fetch_model(
-    model: str, session: curl_requests.Session
-) -> list[dict[str, Any]]:
-    """Descarga todas las páginas disponibles de un modelo."""
+
+async def fetch_model_in_page(page: Any, model: str) -> list[dict[str, Any]]:
+    """Consulta un modelo mediante fetch dentro del Chrome validado por Tesla."""
     results: list[dict[str, Any]] = []
     offset = 0
     total = 1
 
     while offset < total and offset < 500:
-        response = session.get(
-            API_URL,
-            params={"query": json.dumps(build_query(model, offset), separators=(",", ":"))},
-            timeout=30,
-            headers={
-                "Accept": "application/json, text/plain, */*",
-                "Accept-Language": "es-ES,es;q=0.9",
-                "Referer": INVENTORY_URL,
-                "sec-fetch-dest": "empty",
-                "sec-fetch-mode": "cors",
-                "sec-fetch-site": "same-origin",
-            },
-        )
-        if response.status_code != 200:
-            raise RuntimeError(
-                f"Tesla devolvió HTTP {response.status_code} para {model}"
-            )
+        query = json.dumps(build_query(model, offset), separators=(",", ":"))
+        request_url = f"{API_URL}?query={urllib.parse.quote(query, safe='')}"
+        script = f"""
+            (async () => {{
+                const response = await fetch({json.dumps(request_url)}, {{
+                    method: "GET",
+                    credentials: "include",
+                    headers: {{
+                        "Accept": "application/json, text/plain, */*",
+                        "Accept-Language": "es-ES,es;q=0.9"
+                    }}
+                }});
+                const body = await response.text();
+                return JSON.stringify({{status: response.status, body}});
+            }})()
+        """
 
-        data = response.json()
+        payload: dict[str, Any] | None = None
+        for attempt in range(2):
+            raw_payload = await page.evaluate(
+                script, await_promise=True, return_by_value=True
+            )
+            payload = json.loads(str(raw_payload))
+            status = int(payload.get("status", 0))
+            if status == 200:
+                break
+            if attempt == 0 and status in (403, 412):
+                log(f"{MODELS[model]} bloqueado temporalmente; recargando…")
+                await page.reload()
+                await asyncio.sleep(6)
+                continue
+            raise RuntimeError(f"Tesla devolvió HTTP {status} para {model}")
+
+        if payload is None:
+            raise RuntimeError(f"Tesla no devolvió respuesta para {model}")
+
+        data = json.loads(str(payload.get("body", "{}")))
         batch = data.get("results", [])
         if not isinstance(batch, list):
             batch = []
@@ -199,30 +221,9 @@ def fetch_model(
         if not batch:
             break
         offset += len(batch)
+        await asyncio.sleep(2)
 
     return results
-
-
-async def fetch_model_with_fresh_cookies(model: str) -> list[dict[str, Any]]:
-    """Usa una cookie Akamai nueva por modelo y reintenta bloqueos temporales."""
-    for attempt in range(2):
-        cookies = await acquire_cookies()
-        session = curl_requests.Session(impersonate="chrome")
-        session.cookies.update(cookies)
-        try:
-            return fetch_model(model, session)
-        except RuntimeError as exc:
-            blocked = "HTTP 403" in str(exc) or "HTTP 412" in str(exc)
-            if attempt == 0 and blocked:
-                log(f"{MODELS[model]} bloqueado temporalmente; reintentando…")
-                await asyncio.sleep(3)
-                continue
-            raise
-        finally:
-            session.close()
-
-    raise RuntimeError(f"No se pudo consultar {MODELS[model]}")
-
 
 def first_value(vehicle: dict[str, Any], *names: str, default: Any = "") -> Any:
     for name in names:
@@ -302,11 +303,12 @@ def send_report(cars: list[dict[str, Any]]) -> None:
 
 
 async def main() -> None:
+    inventory_by_model = await fetch_inventory_in_browser()
     cars: list[dict[str, Any]] = []
     seen: set[str] = set()
 
     for model in MODELS:
-        raw_results = await fetch_model_with_fresh_cookies(model)
+        raw_results = inventory_by_model[model]
         for raw_vehicle in raw_results:
             try:
                 car = normalize_vehicle(model, raw_vehicle)
