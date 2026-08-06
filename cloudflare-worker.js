@@ -65,7 +65,7 @@ async function sendTelegram(env, text) {
   }
 
   const response = await fetch(
-    \`https://api.telegram.org/bot\${env.TELEGRAM_BOT_TOKEN}/sendMessage\`,
+    "https://api.telegram.org/bot" + env.TELEGRAM_BOT_TOKEN + "/sendMessage",
     {
       method: "POST",
       headers: {"content-type": "application/json"},
@@ -79,28 +79,29 @@ async function sendTelegram(env, text) {
   );
 
   if (!response.ok) {
-    throw new Error(\`Telegram devolvió HTTP \${response.status}\`);
+    throw new Error("Telegram devolvió HTTP " + response.status);
   }
 }
 
 function describeCar(car) {
   const title = [car.model, car.trim].filter(Boolean).join(" — ");
-  const year = car.year ? \` (\${escapeHtml(car.year)})\` : "";
+  const year = car.year ? " (" + escapeHtml(car.year) + ")" : "";
   const demo = car.demo ? "\n🧪 Vehículo de demostración" : "";
   const safeUrl = car.url.startsWith("https://www.tesla.com/")
     ? escapeHtml(car.url)
     : "https://www.tesla.com/es_ES/inventory/new/m3";
 
   return (
-    \`🚗 <b>\${escapeHtml(title)}</b>\${year}\n\` +
-    \`💶 \${escapeHtml(formatPrice(car.price))}\n\` +
-    \`📍 \${escapeHtml(car.location)}\${demo}\n\` +
-    \`🔗 <a href="\${safeUrl}">Ver y reservar en Tesla</a>\`
+    "🚗 <b>" + escapeHtml(title) + "</b>" + year + "\n" +
+    "💶 " + escapeHtml(formatPrice(car.price)) + "\n" +
+    "📍 " + escapeHtml(car.location) + demo + "\n" +
+    '🔗 <a href="' + safeUrl + '">Ver y reservar en Tesla</a>'
   );
 }
 
 async function notifyNewCars(env, cars) {
-  let current = \`⚡️ <b>\${cars.length} Tesla nuevos en entrega inmediata</b>\n\n\`;
+  let current =
+    "⚡️ <b>" + cars.length + " Tesla nuevos en entrega inmediata</b>\n\n";
   const messages = [];
 
   for (const car of cars) {
@@ -109,7 +110,7 @@ async function notifyNewCars(env, cars) {
       messages.push(current.trim());
       current = "";
     }
-    current += \`\${block}\n\n\`;
+    current += block + "\n\n";
   }
   if (current.trim()) messages.push(current.trim());
 
@@ -121,7 +122,7 @@ async function notifyNewCars(env, cars) {
 async function handleReport(request, env) {
   const expected = env.MONITOR_API_KEY;
   const supplied = request.headers.get("authorization");
-  if (!expected || supplied !== \`Bearer \${expected}\`) {
+  if (!expected || supplied !== "Bearer " + expected) {
     return json({ok: false, error: "No autorizado"}, 401);
   }
 
@@ -135,8 +136,10 @@ async function handleReport(request, env) {
   if (!initialized) {
     await sendTelegram(
       env,
-      \`✅ <b>Monitor Tesla España activado</b>\n\` +
-        \`Revisaré los cuatro modelos cada cinco minutos. Inventario inicial: \${cars.length} vehículos.\`,
+      "✅ <b>Monitor Tesla España activado</b>\n" +
+        "Revisaré los cuatro modelos cada cinco minutos. Inventario inicial: " +
+        cars.length +
+        " vehículos.",
     );
     await env.INVENTORY_STATE.put(STATE_KEY, JSON.stringify(currentIds));
     await env.INVENTORY_STATE.put(INITIALIZED_KEY, "1");
