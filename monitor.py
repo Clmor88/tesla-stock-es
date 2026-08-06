@@ -9,7 +9,10 @@ from __future__ import annotations
 import asyncio
 import json
 import os
+import subprocess
 import sys
+import tempfile
+import urllib.request
 from datetime import datetime, timezone
 from typing import Any
 
@@ -38,21 +41,62 @@ def log(message: str) -> None:
 
 
 async def acquire_cookies() -> dict[str, str]:
-    """Abre un Chrome real y devuelve las cookies creadas por Akamai."""
+    """Arranca Chrome, espera su puerto de depuración y obtiene cookies de Tesla."""
     log("Abriendo Chrome para obtener las cookies de Tesla…")
-    browser = await uc.start(
-        headless=True,
-        sandbox=False,
-        browser_executable_path="/usr/bin/google-chrome",
-        lang="es-ES",
-        browser_args=[
-            "--no-first-run",
-            "--no-default-browser-check",
-            "--disable-dev-shm-usage",
-            "--window-size=1440,1000",
-        ],
+    os.environ["NO_PROXY"] = "localhost,127.0.0.1"
+    os.environ["no_proxy"] = "localhost,127.0.0.1"
+
+    profile = tempfile.TemporaryDirectory(prefix="tesla-chrome-")
+    port = uc.core.util.free_port()
+    chrome_process = await asyncio.create_subprocess_exec(
+        "/usr/bin/google-chrome",
+        "--no-first-run",
+        "--no-default-browser-check",
+        "--disable-dev-shm-usage",
+        "--no-sandbox",
+        "--remote-allow-origins=*",
+        "--remote-debugging-address=127.0.0.1",
+        f"--remote-debugging-port={port}",
+        f"--user-data-dir={profile.name}",
+        "--window-size=1440,1000",
+        "about:blank",
+        stdin=subprocess.DEVNULL,
+        stdout=subprocess.DEVNULL,
+        stderr=asyncio.subprocess.PIPE,
     )
+    browser = None
+
+    def read_debug_version() -> None:
+        opener = urllib.request.build_opener(urllib.request.ProxyHandler({}))
+        with opener.open(
+            f"http://127.0.0.1:{port}/json/version", timeout=2
+        ) as response:
+            if response.status != 200:
+                raise RuntimeError(f"Puerto de Chrome devolvió HTTP {response.status}")
+
     try:
+        last_error: Exception | None = None
+        for _ in range(40):
+            if chrome_process.returncode is not None:
+                stderr = (await chrome_process.stderr.read()).decode(
+                    "utf-8", errors="replace"
+                )
+                raise RuntimeError(
+                    f"Chrome terminó antes de abrir su puerto: {stderr[-1500:]}"
+                )
+            try:
+                await asyncio.to_thread(read_debug_version)
+                break
+            except Exception as exc:
+                last_error = exc
+                await asyncio.sleep(0.5)
+        else:
+            raise RuntimeError(
+                f"Chrome no abrió el puerto de depuración: {last_error}"
+            )
+
+        log("Chrome está listo; conectando el monitor…")
+        browser = await uc.start(host="127.0.0.1", port=port)
         page = await browser.get("https://www.tesla.com/es_es")
         await asyncio.sleep(6)
         page = await browser.get(INVENTORY_URL)
@@ -73,8 +117,19 @@ async def acquire_cookies() -> dict[str, str]:
         log(f"Cookies obtenidas correctamente ({len(cookies)} en total).")
         return cookies
     finally:
-        browser.stop()
-
+        if browser is not None:
+            try:
+                await browser.aclose()
+            except Exception:
+                pass
+        if chrome_process.returncode is None:
+            chrome_process.terminate()
+            try:
+                await asyncio.wait_for(chrome_process.wait(), timeout=5)
+            except asyncio.TimeoutError:
+                chrome_process.kill()
+                await chrome_process.wait()
+        profile.cleanup()
 
 def build_query(model: str, offset: int) -> dict[str, Any]:
     return {
