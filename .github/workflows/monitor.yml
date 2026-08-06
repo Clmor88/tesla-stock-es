@@ -9,7 +9,7 @@ permissions:
   contents: read
 
 concurrency:
-  group: tesla-stock-es
+  group: tesla-stock-es-v2
   cancel-in-progress: false
 
 jobs:
