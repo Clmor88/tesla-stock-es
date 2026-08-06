@@ -157,23 +157,22 @@ def build_query(model: str, offset: int) -> dict[str, Any]:
     }
 
 
-def fetch_model(model: str, cookies: dict[str, str]) -> list[dict[str, Any]]:
+def fetch_model(
+    model: str, session: curl_requests.Session
+) -> list[dict[str, Any]]:
     """Descarga todas las páginas disponibles de un modelo."""
-    cookie_header = "; ".join(f"{key}={value}" for key, value in cookies.items())
     results: list[dict[str, Any]] = []
     offset = 0
     total = 1
 
     while offset < total and offset < 500:
-        response = curl_requests.get(
+        response = session.get(
             API_URL,
             params={"query": json.dumps(build_query(model, offset), separators=(",", ":"))},
-            impersonate="chrome",
             timeout=30,
             headers={
                 "Accept": "application/json, text/plain, */*",
                 "Accept-Language": "es-ES,es;q=0.9",
-                "Cookie": cookie_header,
                 "Referer": INVENTORY_URL,
                 "sec-fetch-dest": "empty",
                 "sec-fetch-mode": "cors",
@@ -283,11 +282,13 @@ def send_report(cars: list[dict[str, Any]]) -> None:
 
 async def main() -> None:
     cookies = await acquire_cookies()
+    session = curl_requests.Session(impersonate="chrome")
+    session.cookies.update(cookies)
     cars: list[dict[str, Any]] = []
     seen: set[str] = set()
 
     for model in MODELS:
-        raw_results = fetch_model(model, cookies)
+        raw_results = fetch_model(model, session)
         for raw_vehicle in raw_results:
             try:
                 car = normalize_vehicle(model, raw_vehicle)
