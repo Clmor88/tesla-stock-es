@@ -1,7 +1,7 @@
-"""Monitor del inventario Tesla nuevo de España.
+"""Monitor del inventario Tesla nuevo y de ocasión de España.
 
-Obtiene cookies anti-bot con Chrome/nodriver, consulta la API oficial con la
-huella TLS de Chrome y envía el inventario normalizado al relé de Cloudflare.
+Usa Chrome/nodriver para consultar la API oficial dentro de una sesión validada
+y envía ambos catálogos normalizados al relé de Cloudflare.
 """
 
 from __future__ import annotations
@@ -36,13 +36,17 @@ MODELS = {
     "ms": "Model S",
     "mx": "Model X",
 }
+CONDITIONS = {
+    "new": "Nuevo",
+    "used": "Ocasión",
+}
 
 
 def log(message: str) -> None:
     print(message, file=sys.stderr, flush=True)
 
 
-async def fetch_inventory_in_browser() -> dict[str, list[dict[str, Any]]]:
+async def fetch_inventory_in_browser() -> dict[str, dict[str, list[dict[str, Any]]]]:
     """Arranca Chrome y consulta todo el inventario dentro del navegador."""
     log("Abriendo Chrome para obtener las cookies de Tesla…")
     os.environ["NO_PROXY"] = "localhost,127.0.0.1"
@@ -117,10 +121,14 @@ async def fetch_inventory_in_browser() -> dict[str, list[dict[str, Any]]]:
         if "_abck" not in cookies:
             raise RuntimeError("Tesla no ha entregado la cookie _abck")
         log(f"Cookies obtenidas correctamente ({len(cookies)} en total).")
-        inventory: dict[str, list[dict[str, Any]]] = {}
-        for model in MODELS:
-            inventory[model] = await fetch_model_in_page(page, model)
-            await asyncio.sleep(2)
+        inventory: dict[str, dict[str, list[dict[str, Any]]]] = {}
+        for condition in CONDITIONS:
+            inventory[condition] = {}
+            for model in MODELS:
+                inventory[condition][model] = await fetch_model_in_page(
+                    page, model, condition
+                )
+                await asyncio.sleep(2)
         return inventory
     finally:
         if browser is not None:
@@ -138,11 +146,11 @@ async def fetch_inventory_in_browser() -> dict[str, list[dict[str, Any]]]:
         profile.cleanup()
 
 
-def build_query(model: str, offset: int) -> dict[str, Any]:
+def build_query(model: str, condition: str, offset: int) -> dict[str, Any]:
     return {
         "query": {
             "model": model,
-            "condition": "new",
+            "condition": condition,
             "options": {},
             "arrangeby": "Price",
             "order": "asc",
@@ -163,14 +171,18 @@ def build_query(model: str, offset: int) -> dict[str, Any]:
 
 
 
-async def fetch_model_in_page(page: Any, model: str) -> list[dict[str, Any]]:
+async def fetch_model_in_page(
+    page: Any, model: str, condition: str
+) -> list[dict[str, Any]]:
     """Consulta un modelo mediante fetch dentro del Chrome validado por Tesla."""
     results: list[dict[str, Any]] = []
     offset = 0
     total = 1
 
     while offset < total and offset < 500:
-        query = json.dumps(build_query(model, offset), separators=(",", ":"))
+        query = json.dumps(
+            build_query(model, condition, offset), separators=(",", ":")
+        )
         request_url = f"{API_URL}?query={urllib.parse.quote(query, safe='')}"
         script = f"""
             (async () => {{
@@ -197,11 +209,16 @@ async def fetch_model_in_page(page: Any, model: str) -> list[dict[str, Any]]:
             if status == 200:
                 break
             if attempt == 0 and status in (403, 412):
-                log(f"{MODELS[model]} bloqueado temporalmente; recargando…")
+                log(
+                    f"{CONDITIONS[condition]} {MODELS[model]} bloqueado "
+                    "temporalmente; recargando…"
+                )
                 await page.reload()
                 await asyncio.sleep(6)
                 continue
-            raise RuntimeError(f"Tesla devolvió HTTP {status} para {model}")
+            raise RuntimeError(
+                f"Tesla devolvió HTTP {status} para {condition}/{model}"
+            )
 
         if payload is None:
             raise RuntimeError(f"Tesla no devolvió respuesta para {model}")
@@ -217,7 +234,10 @@ async def fetch_model_in_page(page: Any, model: str) -> list[dict[str, Any]]:
             total = len(batch)
 
         results.extend(batch)
-        log(f"{MODELS[model]}: {len(results)}/{total} vehículos.")
+        log(
+            f"{CONDITIONS[condition]} {MODELS[model]}: "
+            f"{len(results)}/{total} vehículos."
+        )
         if not batch:
             break
         offset += len(batch)
@@ -233,7 +253,9 @@ def first_value(vehicle: dict[str, Any], *names: str, default: Any = "") -> Any:
     return default
 
 
-def normalize_vehicle(model: str, vehicle: dict[str, Any]) -> dict[str, Any]:
+def normalize_vehicle(
+    model: str, condition: str, vehicle: dict[str, Any]
+) -> dict[str, Any]:
     vin = str(first_value(vehicle, "VIN", "Vin", "vin"))
     identifier = vin or str(
         first_value(
@@ -261,8 +283,20 @@ def normalize_vehicle(model: str, vehicle: dict[str, Any]) -> dict[str, Any]:
     ).strip()
     location = ", ".join(part for part in (city, province) if part)
 
+    mileage = first_value(
+        vehicle,
+        "Odometer",
+        "OdometerKM",
+        "OdometerKm",
+        "Mileage",
+        "MileageKM",
+        "MileageKm",
+        default="",
+    )
+
     return {
         "id": identifier,
+        "condition": condition,
         "vin": vin,
         "model": MODELS[model],
         "trim": str(first_value(vehicle, "TrimName", "Trim", "Title", default="")),
@@ -270,17 +304,20 @@ def normalize_vehicle(model: str, vehicle: dict[str, Any]) -> dict[str, Any]:
         "price": price,
         "currency": "EUR",
         "location": location or "España",
+        "mileage": mileage,
         "demo": bool(vehicle.get("IsDemo", False)),
         "url": (
             f"https://www.tesla.com/es_ES/{model}/order/{vin}"
-            "?titleStatus=new&redirect=no"
+            f"?titleStatus={condition}&redirect=no"
             if vin
-            else f"https://www.tesla.com/es_ES/inventory/new/{model}"
+            else f"https://www.tesla.com/es_ES/inventory/{condition}/{model}"
         ),
     }
 
 
-def send_report(cars: list[dict[str, Any]]) -> None:
+def send_report(
+    new_cars: list[dict[str, Any]], used_cars: list[dict[str, Any]]
+) -> None:
     secret = os.environ.get("MONITOR_API_KEY")
     if not secret:
         raise RuntimeError("Falta el secreto MONITOR_API_KEY")
@@ -288,7 +325,8 @@ def send_report(cars: list[dict[str, Any]]) -> None:
     response = curl_requests.post(
         RELAY_URL,
         json={
-            "cars": cars,
+            "cars": new_cars,
+            "used_cars": used_cars,
             "checked_at": datetime.now(timezone.utc).isoformat(),
         },
         headers={
@@ -303,25 +341,36 @@ def send_report(cars: list[dict[str, Any]]) -> None:
 
 
 async def main() -> None:
-    inventory_by_model = await fetch_inventory_in_browser()
-    cars: list[dict[str, Any]] = []
-    seen: set[str] = set()
+    inventory = await fetch_inventory_in_browser()
+    cars_by_condition: dict[str, list[dict[str, Any]]] = {
+        condition: [] for condition in CONDITIONS
+    }
+    seen_by_condition: dict[str, set[str]] = {
+        condition: set() for condition in CONDITIONS
+    }
 
-    for model in MODELS:
-        raw_results = inventory_by_model[model]
-        for raw_vehicle in raw_results:
-            try:
-                car = normalize_vehicle(model, raw_vehicle)
-            except ValueError as exc:
-                log(f"Ignorado: {exc}")
-                continue
-            if car["id"] not in seen:
-                seen.add(car["id"])
-                cars.append(car)
+    for condition in CONDITIONS:
+        for model in MODELS:
+            for raw_vehicle in inventory[condition][model]:
+                try:
+                    car = normalize_vehicle(model, condition, raw_vehicle)
+                except ValueError as exc:
+                    log(f"Ignorado: {exc}")
+                    continue
+                if car["id"] not in seen_by_condition[condition]:
+                    seen_by_condition[condition].add(car["id"])
+                    cars_by_condition[condition].append(car)
 
-    cars.sort(key=lambda car: (str(car["model"]), float(car["price"] or 0)))
-    log(f"Inventario español total: {len(cars)} vehículos.")
-    send_report(cars)
+    for cars in cars_by_condition.values():
+        cars.sort(key=lambda car: (str(car["model"]), float(car["price"] or 0)))
+
+    new_cars = cars_by_condition["new"]
+    used_cars = cars_by_condition["used"]
+    log(
+        f"Inventario español total: {len(new_cars)} nuevos y "
+        f"{len(used_cars)} de ocasión."
+    )
+    send_report(new_cars, used_cars)
 
 
 if __name__ == "__main__":
