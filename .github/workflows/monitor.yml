@@ -1,6 +1,8 @@
 name: Comprobar stock Tesla España
 
 on:
+  push:
+    branches: [main]
   schedule:
     - cron: "*/5 * * * *"
   workflow_dispatch:
