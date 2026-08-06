@@ -41,14 +41,14 @@ async def acquire_cookies() -> dict[str, str]:
     """Abre un Chrome real y devuelve las cookies creadas por Akamai."""
     log("Abriendo Chrome para obtener las cookies de Tesla…")
     browser = await uc.start(
-        headless=False,
+        headless=True,
         sandbox=False,
+        browser_executable_path="/usr/bin/google-chrome",
         lang="es-ES",
         browser_args=[
             "--no-first-run",
             "--no-default-browser-check",
             "--disable-dev-shm-usage",
-            "--no-sandbox",
             "--window-size=1440,1000",
         ],
     )
