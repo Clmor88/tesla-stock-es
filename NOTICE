@@ -1,0 +1,7 @@
+Attribution
+
+The Akamai cookie-acquisition and curl_cffi request approach is adapted from
+TeslaWebScrape by JumpBearCode:
+https://github.com/JumpBearCode/TeslaWebScrape
+
+TeslaWebScrape is distributed under the MIT License.
