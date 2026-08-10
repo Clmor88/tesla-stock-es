@@ -9,7 +9,7 @@ permissions:
   contents: read
 
 concurrency:
-  group: tesla-stock-es-v3
+  group: tesla-stock-es-v4
   cancel-in-progress: false
 
 env:
@@ -19,7 +19,7 @@ env:
 
 jobs:
   attempt_1:
-    name: Intento 1 — runner principal
+    name: Intento 1 — Linux
     runs-on: ubuntu-latest
     timeout-minutes: 6
     continue-on-error: true
@@ -27,7 +27,7 @@ jobs:
       success: ${{ steps.monitor.outcome == 'success' }}
     steps:
       - name: Descargar código
-        run: git clone --depth 1 "$GITHUB_SERVER_URL/$GITHUB_REPOSITORY.git" .
+        uses: actions/checkout@v4
 
       - name: Preparar Python
         run: |
@@ -47,20 +47,17 @@ jobs:
         run: xvfb-run -a .venv/bin/python monitor.py
 
   attempt_2:
-    name: Intento 2 — runner e IP nuevos
+    name: Intento 2 — macOS
     needs: attempt_1
     if: ${{ always() && needs.attempt_1.outputs.success != 'true' }}
-    runs-on: ubuntu-latest
-    timeout-minutes: 6
+    runs-on: macos-15
+    timeout-minutes: 8
     continue-on-error: true
     outputs:
       success: ${{ steps.monitor.outcome == 'success' }}
     steps:
-      - name: Esperar antes del segundo intento
-        run: sleep 45
-
       - name: Descargar código
-        run: git clone --depth 1 "$GITHUB_SERVER_URL/$GITHUB_REPOSITORY.git" .
+        uses: actions/checkout@v4
 
       - name: Preparar Python
         run: |
@@ -71,43 +68,43 @@ jobs:
         run: |
           .venv/bin/python -m pip install --upgrade pip
           .venv/bin/pip install -r requirements.txt
-          google-chrome --version
+          "/Applications/Google Chrome.app/Contents/MacOS/Google Chrome" --version
 
       - id: monitor
         name: Consultar Tesla y actualizar Telegram
         env:
           MONITOR_API_KEY: ${{ secrets.MONITOR_API_KEY }}
-        run: xvfb-run -a .venv/bin/python monitor.py
+        run: .venv/bin/python monitor.py
 
   attempt_3:
-    name: Intento 3 — último runner alternativo
+    name: Intento 3 — Windows
     needs: [attempt_1, attempt_2]
     if: >-
       ${{ always() &&
           needs.attempt_1.outputs.success != 'true' &&
           needs.attempt_2.outputs.success != 'true' }}
-    runs-on: ubuntu-latest
-    timeout-minutes: 6
+    runs-on: windows-latest
+    timeout-minutes: 8
     steps:
-      - name: Esperar antes del último intento
-        run: sleep 90
-
       - name: Descargar código
-        run: git clone --depth 1 "$GITHUB_SERVER_URL/$GITHUB_REPOSITORY.git" .
+        uses: actions/checkout@v4
 
       - name: Preparar Python
+        shell: pwsh
         run: |
-          python3 --version
-          python3 -m venv .venv
+          python --version
+          python -m venv .venv
 
       - name: Instalar dependencias
+        shell: pwsh
         run: |
-          .venv/bin/python -m pip install --upgrade pip
-          .venv/bin/pip install -r requirements.txt
-          google-chrome --version
+          .\.venv\Scripts\python.exe -m pip install --upgrade pip
+          .\.venv\Scripts\pip.exe install -r requirements.txt
+          & "$env:ProgramFiles\Google\Chrome\Application\chrome.exe" --version
 
       - id: monitor
         name: Consultar Tesla y actualizar Telegram
+        shell: pwsh
         env:
           MONITOR_API_KEY: ${{ secrets.MONITOR_API_KEY }}
-        run: xvfb-run -a .venv/bin/python monitor.py
+        run: .\.venv\Scripts\python.exe monitor.py
