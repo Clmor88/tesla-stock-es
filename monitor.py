@@ -50,6 +50,26 @@ def log(message: str) -> None:
     print(message, file=sys.stderr, flush=True)
 
 
+def chrome_executable() -> str:
+    """Localiza Chrome en los runners Linux, macOS y Windows."""
+    candidates = [
+        os.getenv("CHROME_BIN", ""),
+        "/usr/bin/google-chrome",
+        "/usr/bin/google-chrome-stable",
+        "/Applications/Google Chrome.app/Contents/MacOS/Google Chrome",
+        r"C:\Program Files\Google\Chrome\Application\chrome.exe",
+        r"C:\Program Files (x86)\Google\Chrome\Application\chrome.exe",
+        os.path.expandvars(
+            r"%LOCALAPPDATA%\Google\Chrome\Application\chrome.exe"
+        ),
+    ]
+    for candidate in candidates:
+        if candidate and os.path.isfile(candidate):
+            log(f"Chrome localizado en {candidate}")
+            return candidate
+    raise RuntimeError("No se encontró Google Chrome en el runner")
+
+
 async def fetch_inventory_in_browser() -> dict[str, dict[str, list[dict[str, Any]]]]:
     """Consulta Tesla, recreando toda la sesión si aparece un bloqueo temporal."""
     errors: list[str] = []
@@ -88,8 +108,7 @@ async def fetch_inventory_session(
     profile = tempfile.TemporaryDirectory(prefix="tesla-chrome-")
     port = free_port()
     window_size = "1440,1000" if attempt % 2 else "1365,900"
-    chrome_process = await asyncio.create_subprocess_exec(
-        "/usr/bin/google-chrome",
+    chrome_args = [
         "--no-first-run",
         "--no-default-browser-check",
         "--disable-dev-shm-usage",
@@ -103,6 +122,13 @@ async def fetch_inventory_session(
         f"--user-data-dir={profile.name}",
         f"--window-size={window_size}",
         "about:blank",
+    ]
+    if sys.platform in ("darwin", "win32"):
+        chrome_args.insert(0, "--headless=new")
+
+    chrome_process = await asyncio.create_subprocess_exec(
+        chrome_executable(),
+        *chrome_args,
         stdin=subprocess.DEVNULL,
         stdout=subprocess.DEVNULL,
         stderr=asyncio.subprocess.PIPE,
