@@ -40,7 +40,9 @@ CONDITIONS = {
     "new": "Nuevo",
     "used": "Ocasión",
 }
-MAX_BROWSER_ATTEMPTS = 3
+MAX_BROWSER_ATTEMPTS = max(
+    1, min(3, int(os.getenv("MAX_BROWSER_ATTEMPTS", "3")))
+)
 BROWSER_RETRY_DELAYS = (8, 18)
 
 
