@@ -27,7 +27,12 @@ jobs:
       success: ${{ steps.monitor.outcome == 'success' }}
     steps:
       - name: Descargar código
-        uses: actions/checkout@v4
+        uses: actions/checkout@v6
+
+      - name: Fijar Python 3.12
+        uses: actions/setup-python@v6
+        with:
+          python-version: "3.12"
 
       - name: Preparar Python
         run: |
@@ -57,7 +62,12 @@ jobs:
       success: ${{ steps.monitor.outcome == 'success' }}
     steps:
       - name: Descargar código
-        uses: actions/checkout@v4
+        uses: actions/checkout@v6
+
+      - name: Fijar Python 3.12
+        uses: actions/setup-python@v6
+        with:
+          python-version: "3.12"
 
       - name: Preparar Python
         run: |
@@ -87,7 +97,12 @@ jobs:
     timeout-minutes: 8
     steps:
       - name: Descargar código
-        uses: actions/checkout@v4
+        uses: actions/checkout@v6
+
+      - name: Fijar Python 3.12
+        uses: actions/setup-python@v6
+        with:
+          python-version: "3.12"
 
       - name: Preparar Python
         shell: pwsh
