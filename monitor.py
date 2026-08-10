@@ -40,6 +40,8 @@ CONDITIONS = {
     "new": "Nuevo",
     "used": "Ocasión",
 }
+MAX_BROWSER_ATTEMPTS = 3
+BROWSER_RETRY_DELAYS = (8, 18)
 
 
 def log(message: str) -> None:
@@ -47,24 +49,57 @@ def log(message: str) -> None:
 
 
 async def fetch_inventory_in_browser() -> dict[str, dict[str, list[dict[str, Any]]]]:
-    """Arranca Chrome y consulta todo el inventario dentro del navegador."""
-    log("Abriendo Chrome para obtener las cookies de Tesla…")
+    """Consulta Tesla, recreando toda la sesión si aparece un bloqueo temporal."""
+    errors: list[str] = []
+
+    for attempt in range(1, MAX_BROWSER_ATTEMPTS + 1):
+        log(f"Intento de navegador {attempt}/{MAX_BROWSER_ATTEMPTS}.")
+        try:
+            return await fetch_inventory_session(attempt)
+        except Exception as exc:
+            errors.append(str(exc))
+            if attempt >= MAX_BROWSER_ATTEMPTS:
+                detail = " | ".join(errors)
+                raise RuntimeError(
+                    f"Tesla no permitió completar la consulta tras "
+                    f"{MAX_BROWSER_ATTEMPTS} sesiones: {detail}"
+                ) from exc
+
+            delay = BROWSER_RETRY_DELAYS[attempt - 1]
+            log(
+                f"Sesión {attempt} descartada: {exc}. "
+                f"Nuevo perfil limpio en {delay} segundos…"
+            )
+            await asyncio.sleep(delay)
+
+    raise RuntimeError("No se pudo iniciar ninguna sesión de Tesla")
+
+
+async def fetch_inventory_session(
+    attempt: int,
+) -> dict[str, dict[str, list[dict[str, Any]]]]:
+    """Arranca un Chrome con perfil efímero y consulta ambos inventarios."""
+    log("Abriendo Chrome con un perfil limpio para obtener cookies de Tesla…")
     os.environ["NO_PROXY"] = "localhost,127.0.0.1"
     os.environ["no_proxy"] = "localhost,127.0.0.1"
 
     profile = tempfile.TemporaryDirectory(prefix="tesla-chrome-")
     port = free_port()
+    window_size = "1440,1000" if attempt % 2 else "1365,900"
     chrome_process = await asyncio.create_subprocess_exec(
         "/usr/bin/google-chrome",
         "--no-first-run",
         "--no-default-browser-check",
         "--disable-dev-shm-usage",
+        "--disable-blink-features=AutomationControlled",
+        "--disable-features=Translate,MediaRouter",
+        "--lang=es-ES",
         "--no-sandbox",
         "--remote-allow-origins=*",
         "--remote-debugging-address=127.0.0.1",
         f"--remote-debugging-port={port}",
         f"--user-data-dir={profile.name}",
-        "--window-size=1440,1000",
+        f"--window-size={window_size}",
         "about:blank",
         stdin=subprocess.DEVNULL,
         stdout=subprocess.DEVNULL,
@@ -104,9 +139,9 @@ async def fetch_inventory_in_browser() -> dict[str, dict[str, list[dict[str, Any
         log("Chrome está listo; conectando el monitor…")
         browser = await uc.start(host="127.0.0.1", port=port)
         page = await browser.get("https://www.tesla.com/es_es")
-        await asyncio.sleep(6)
+        await asyncio.sleep(5 + attempt * 2)
         page = await browser.get(INVENTORY_URL)
-        await asyncio.sleep(12)
+        await asyncio.sleep(10 + attempt * 2)
 
         title = str(await page.evaluate("document.title"))
         if "Access Denied" in title:
@@ -121,6 +156,7 @@ async def fetch_inventory_in_browser() -> dict[str, dict[str, list[dict[str, Any
         if "_abck" not in cookies:
             raise RuntimeError("Tesla no ha entregado la cookie _abck")
         log(f"Cookies obtenidas correctamente ({len(cookies)} en total).")
+
         inventory: dict[str, dict[str, list[dict[str, Any]]]] = {}
         for condition in CONDITIONS:
             inventory[condition] = {}
@@ -170,7 +206,6 @@ def build_query(model: str, condition: str, offset: int) -> dict[str, Any]:
     }
 
 
-
 async def fetch_model_in_page(
     page: Any, model: str, condition: str
 ) -> list[dict[str, Any]]:
@@ -200,7 +235,7 @@ async def fetch_model_in_page(
         """
 
         payload: dict[str, Any] | None = None
-        for attempt in range(2):
+        for api_attempt in range(3):
             raw_payload = await page.evaluate(
                 script, await_promise=True, return_by_value=True
             )
@@ -208,13 +243,15 @@ async def fetch_model_in_page(
             status = int(payload.get("status", 0))
             if status == 200:
                 break
-            if attempt == 0 and status in (403, 412):
+            if api_attempt < 2 and status in (403, 412):
+                wait_seconds = 6 + api_attempt * 4
                 log(
                     f"{CONDITIONS[condition]} {MODELS[model]} bloqueado "
-                    "temporalmente; recargando…"
+                    f"temporalmente; reintento API {api_attempt + 2}/3 "
+                    f"en {wait_seconds} segundos…"
                 )
                 await page.reload()
-                await asyncio.sleep(6)
+                await asyncio.sleep(wait_seconds)
                 continue
             raise RuntimeError(
                 f"Tesla devolvió HTTP {status} para {condition}/{model}"
@@ -244,6 +281,7 @@ async def fetch_model_in_page(
         await asyncio.sleep(2)
 
     return results
+
 
 def first_value(vehicle: dict[str, Any], *names: str, default: Any = "") -> Any:
     for name in names:
