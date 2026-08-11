@@ -2,14 +2,14 @@ name: Comprobar stock Tesla España
 
 on:
   schedule:
-    - cron: "*/5 * * * *"
+    - cron: "11,34,52 * * * *"
   workflow_dispatch:
 
 permissions:
   contents: read
 
 concurrency:
-  group: tesla-stock-es-v4
+  group: tesla-stock-es-v5
   cancel-in-progress: false
 
 env:
@@ -18,13 +18,10 @@ env:
   PYTHONUNBUFFERED: "1"
 
 jobs:
-  attempt_1:
-    name: Intento 1 — Linux
+  monitor:
+    name: Comprobación independiente — Linux
     runs-on: ubuntu-latest
-    timeout-minutes: 6
-    continue-on-error: true
-    outputs:
-      success: ${{ steps.monitor.outcome == 'success' }}
+    timeout-minutes: 8
     steps:
       - name: Descargar código
         uses: actions/checkout@v6
@@ -33,6 +30,13 @@ jobs:
         uses: actions/setup-python@v6
         with:
           python-version: "3.12"
+
+      - name: Espera aleatoria antipatrones
+        if: github.event_name == 'schedule'
+        run: |
+          delay=$((20 + RANDOM % 101))
+          echo "Esperando ${delay} segundos antes de abrir Tesla."
+          sleep "${delay}"
 
       - name: Preparar Python
         run: |
@@ -45,81 +49,7 @@ jobs:
           .venv/bin/pip install -r requirements.txt
           google-chrome --version
 
-      - id: monitor
-        name: Consultar Tesla y actualizar Telegram
+      - name: Consultar Tesla y actualizar Telegram
         env:
           MONITOR_API_KEY: ${{ secrets.MONITOR_API_KEY }}
         run: xvfb-run -a .venv/bin/python monitor.py
-
-  attempt_2:
-    name: Intento 2 — macOS
-    needs: attempt_1
-    if: ${{ always() && needs.attempt_1.outputs.success != 'true' }}
-    runs-on: macos-15
-    timeout-minutes: 8
-    continue-on-error: true
-    outputs:
-      success: ${{ steps.monitor.outcome == 'success' }}
-    steps:
-      - name: Descargar código
-        uses: actions/checkout@v6
-
-      - name: Fijar Python 3.12
-        uses: actions/setup-python@v6
-        with:
-          python-version: "3.12"
-
-      - name: Preparar Python
-        run: |
-          python3 --version
-          python3 -m venv .venv
-
-      - name: Instalar dependencias
-        run: |
-          .venv/bin/python -m pip install --upgrade pip
-          .venv/bin/pip install -r requirements.txt
-          "/Applications/Google Chrome.app/Contents/MacOS/Google Chrome" --version
-
-      - id: monitor
-        name: Consultar Tesla y actualizar Telegram
-        env:
-          MONITOR_API_KEY: ${{ secrets.MONITOR_API_KEY }}
-        run: .venv/bin/python monitor.py
-
-  attempt_3:
-    name: Intento 3 — Windows
-    needs: [attempt_1, attempt_2]
-    if: >-
-      ${{ always() &&
-          needs.attempt_1.outputs.success != 'true' &&
-          needs.attempt_2.outputs.success != 'true' }}
-    runs-on: windows-latest
-    timeout-minutes: 8
-    steps:
-      - name: Descargar código
-        uses: actions/checkout@v6
-
-      - name: Fijar Python 3.12
-        uses: actions/setup-python@v6
-        with:
-          python-version: "3.12"
-
-      - name: Preparar Python
-        shell: pwsh
-        run: |
-          python --version
-          python -m venv .venv
-
-      - name: Instalar dependencias
-        shell: pwsh
-        run: |
-          .\.venv\Scripts\python.exe -m pip install --upgrade pip
-          .\.venv\Scripts\pip.exe install -r requirements.txt
-          & "$env:ProgramFiles\Google\Chrome\Application\chrome.exe" --version
-
-      - id: monitor
-        name: Consultar Tesla y actualizar Telegram
-        shell: pwsh
-        env:
-          MONITOR_API_KEY: ${{ secrets.MONITOR_API_KEY }}
-        run: .\.venv\Scripts\python.exe monitor.py
