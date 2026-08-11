@@ -13,7 +13,7 @@ caso de los vehículos de ocasión, también cuando deja de estar disponible.
 
 ## Cómo funciona
 
-1. GitHub Actions ejecuta el monitor cada cinco minutos.
+1. GitHub Actions lanza tres comprobaciones independientes por hora, separadas en el tiempo y con una pequeña espera aleatoria.
 2. Un Chrome real obtiene las cookies que Tesla exige contra tráfico automatizado.
 3. Ese mismo Chrome consulta la API oficial de inventario para España.
 4. El Worker de Cloudflare compara los identificadores con la comprobación anterior.
@@ -25,8 +25,8 @@ generan avisos individuales.
 
 En los vehículos de ocasión, una desaparición se confirma en dos comprobaciones
 consecutivas antes de avisar. Esto reduce falsas retiradas si Tesla devuelve
-temporalmente un resultado incompleto. Con la frecuencia actual, el aviso de
-retirada suele llegar aproximadamente entre cinco y diez minutos después.
+temporalmente un resultado incompleto. Una retirada requiere dos comprobaciones
+válidas, por lo que el tiempo exacto depende de cuándo Tesla permita cada consulta.
 
 ## Archivos
 
@@ -43,8 +43,9 @@ token, chat ID ni clave privada está incluido en este repositorio público.
 
 ## Frecuencia
 
-El workflow solicita una comprobación cada cinco minutos. GitHub puede introducir
-un pequeño retraso en horas de alta demanda.
+El workflow solicita tres comprobaciones independientes por hora, en los minutos
+11, 34 y 52. Cada ejecución añade una espera aleatoria de 20 a 120 segundos para
+evitar un patrón rígido. GitHub puede introducir retrasos en horas de alta demanda.
 
 ## Créditos
 
