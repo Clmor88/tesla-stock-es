@@ -2,18 +2,18 @@ name: Comprobar stock Tesla España
 
 on:
   schedule:
-    - cron: "11,34,52 * * * *"
+    - cron: "17 * * * *"
   workflow_dispatch:
 
 permissions:
   contents: read
 
 concurrency:
-  group: tesla-stock-es-v5
+  group: tesla-stock-es-v6
   cancel-in-progress: false
 
 env:
-  MAX_BROWSER_ATTEMPTS: "1"
+  MAX_BROWSER_ATTEMPTS: "3"
   MONITOR_RELAY_URL: https://tesla-stock-es.clementmoreno.workers.dev/report
   PYTHONUNBUFFERED: "1"
 
@@ -21,7 +21,7 @@ jobs:
   monitor:
     name: Comprobación independiente — Linux
     runs-on: ubuntu-latest
-    timeout-minutes: 8
+    timeout-minutes: 15
     steps:
       - name: Descargar código
         uses: actions/checkout@v6
@@ -34,7 +34,7 @@ jobs:
       - name: Espera aleatoria antipatrones
         if: github.event_name == 'schedule'
         run: |
-          delay=$((20 + RANDOM % 101))
+          delay=$((45 + RANDOM % 136))
           echo "Esperando ${delay} segundos antes de abrir Tesla."
           sleep "${delay}"
 
