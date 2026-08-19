@@ -13,7 +13,7 @@ caso de los vehículos de ocasión, también cuando deja de estar disponible.
 
 ## Cómo funciona
 
-1. GitHub Actions lanza tres comprobaciones independientes por hora, separadas en el tiempo y con una pequeña espera aleatoria.
+1. GitHub Actions lanza una comprobación por hora, con hasta tres sesiones independientes y una espera aleatoria.
 2. Un Chrome real obtiene las cookies que Tesla exige contra tráfico automatizado.
 3. Ese mismo Chrome consulta la API oficial de inventario para España.
 4. El Worker de Cloudflare compara los identificadores con la comprobación anterior.
@@ -43,8 +43,8 @@ token, chat ID ni clave privada está incluido en este repositorio público.
 
 ## Frecuencia
 
-El workflow solicita tres comprobaciones independientes por hora, en los minutos
-11, 34 y 52. Cada ejecución añade una espera aleatoria de 20 a 120 segundos para
+El workflow solicita una comprobación por hora, en el minuto 17. Cada ejecución
+añade una espera aleatoria de 45 a 180 segundos y puede recrear hasta tres sesiones para
 evitar un patrón rígido. GitHub puede introducir retrasos en horas de alta demanda.
 
 ## Créditos
