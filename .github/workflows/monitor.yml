@@ -9,7 +9,7 @@ permissions:
   contents: read
 
 concurrency:
-  group: tesla-stock-es-v6
+  group: tesla-stock-es-v7
   cancel-in-progress: false
 
 env:
@@ -18,10 +18,13 @@ env:
   PYTHONUNBUFFERED: "1"
 
 jobs:
-  monitor:
-    name: Comprobación independiente — Linux
+  attempt_linux:
+    name: Intento principal — Linux
     runs-on: ubuntu-latest
     timeout-minutes: 15
+    continue-on-error: true
+    outputs:
+      success: ${{ steps.monitor.outcome == 'success' }}
     steps:
       - name: Descargar código
         uses: actions/checkout@v6
@@ -49,7 +52,39 @@ jobs:
           .venv/bin/pip install -r requirements.txt
           google-chrome --version
 
-      - name: Consultar Tesla y actualizar Telegram
+      - id: monitor
+        name: Consultar Tesla y actualizar Telegram
         env:
           MONITOR_API_KEY: ${{ secrets.MONITOR_API_KEY }}
         run: xvfb-run -a .venv/bin/python monitor.py
+
+  fallback_macos:
+    name: Respaldo — macOS
+    needs: attempt_linux
+    if: ${{ always() && needs.attempt_linux.outputs.success != 'true' }}
+    runs-on: macos-15
+    timeout-minutes: 15
+    steps:
+      - name: Descargar código
+        uses: actions/checkout@v6
+
+      - name: Fijar Python 3.12
+        uses: actions/setup-python@v6
+        with:
+          python-version: "3.12"
+
+      - name: Preparar Python
+        run: |
+          python3 --version
+          python3 -m venv .venv
+
+      - name: Instalar dependencias
+        run: |
+          .venv/bin/python -m pip install --upgrade pip
+          .venv/bin/pip install -r requirements.txt
+          "/Applications/Google Chrome.app/Contents/MacOS/Google Chrome" --version
+
+      - name: Consultar Tesla y actualizar Telegram
+        env:
+          MONITOR_API_KEY: ${{ secrets.MONITOR_API_KEY }}
+        run: .venv/bin/python monitor.py
