@@ -13,7 +13,7 @@ caso de los vehículos de ocasión, también cuando deja de estar disponible.
 
 ## Cómo funciona
 
-1. GitHub Actions lanza una comprobación por hora, con hasta tres sesiones independientes y una espera aleatoria.
+1. GitHub Actions lanza una comprobación por hora en Linux y, si Tesla bloquea sus tres sesiones, activa un respaldo en macOS.
 2. Un Chrome real obtiene las cookies que Tesla exige contra tráfico automatizado.
 3. Ese mismo Chrome consulta la API oficial de inventario para España.
 4. El Worker de Cloudflare compara los identificadores con la comprobación anterior.
@@ -45,7 +45,7 @@ token, chat ID ni clave privada está incluido en este repositorio público.
 
 El workflow solicita una comprobación por hora, en el minuto 17. Cada ejecución
 añade una espera aleatoria de 45 a 180 segundos y puede recrear hasta tres sesiones para
-evitar un patrón rígido. GitHub puede introducir retrasos en horas de alta demanda.
+evitar un patrón rígido. Si Linux agota sus tres sesiones, macOS realiza hasta tres sesiones nuevas desde otra red. GitHub puede introducir retrasos en horas de alta demanda.
 
 ## Créditos
 
